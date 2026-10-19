@@ -1,0 +1,15 @@
+.git
+.gradle
+.idea
+.env
+.env.*
+local-keys
+**/local-keys
+**/src
+**/build/classes
+**/build/generated
+**/build/reports
+**/build/test-results
+**/build/tmp
+**/build/resources
+**/build/libs/*-plain.jar

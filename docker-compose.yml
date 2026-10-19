@@ -1,36 +1,453 @@
-version: '3.8'
+name: sixro-local
+
+x-app: &app
+  restart: unless-stopped
+  init: true
+  mem_limit: 512m
+  networks: [sixro]
+  environment: &app-environment
+    JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=${JVM_MAX_RAM_PERCENTAGE:-65}
+    SPRING_PROFILES_ACTIVE: local-docker
+    # Do not import the old host-specific .env inside containers.
+    SPRING_CONFIG_IMPORT: optional:file:/app/nonexistent-local.properties
+    EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-server:19090/eureka/
+    EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+    EUREKA_INSTANCE_INSTANCE_ID: $${spring.application.name}:$${HOSTNAME}
+    SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    SPRING_KAFKA_CONSUMER_BOOTSTRAP_SERVERS: kafka:29092
+    SPRING_KAFKA_PRODUCER_BOOTSTRAP_SERVERS: kafka:29092
+    KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    KAFKA_SERVER_URL: kafka:29092
+    SPRING_DATA_REDIS_HOST: redis
+    SPRING_DATA_REDIS_PORT: "6379"
+    SPRING_DATA_REDIS_USERNAME: default
+    SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env.local}
+    REDIS_HOST: redis
+    REDIS_PORT: "6379"
+    REDIS_USERNAME: default
+    REDIS_PASSWORD: ${REDIS_PASSWORD}
+    ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
+    MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: http://zipkin:9411/api/v2/spans
+    MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info
+    MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: never
+    SPRING_JPA_HIBERNATE_DDL_AUTO: update
 
 services:
-  # 1. Zookeeper (Kafka 실행을 위한 필수 코디네이터 서비스)
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.5.0
-    container_name: zookeeper
-    ports:
-      - "2181:2181"
+  postgres:
+    build:
+      context: infrastructure/postgres
+    restart: unless-stopped
+    mem_limit: 768m
     environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.local}
+      POSTGRES_DB: sixro_db
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Set APP_DB_PASSWORD in .env.local}
+    ports: ["127.0.0.1:${POSTGRES_HOST_PORT:-5434}:5432"]
+    volumes:
+      - postgres-data:/var/lib/postgresql
+      - ./infrastructure/postgres/init:/docker-entrypoint-initdb.d:ro
+      - ./user-service/src/main/resources/db/ddl:/service-ddl/user:ro
+      - ./company-service/src/main/resources/db.ddl:/service-ddl/company:ro
+      - ./product-service/src/main/resources/db.ddl:/service-ddl/product:ro
+      - ./order-service/src/main/resources/db.ddl:/service-ddl/order:ro
+      - ./inventory-service/src/main/resources/db.ddl:/service-ddl/inventory:ro
+      - ./delivery-service/src/main/resources/db/ddl:/service-ddl/delivery:ro
+      - ./hub-service/src/main/resources/db/ddl:/service-ddl/hub:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d sixro_db && PGPASSWORD=$$POSTGRES_PASSWORD psql -h 127.0.0.1 -U postgres -d sixro_db -tAc 'SELECT id FROM public.local_init_complete' | grep -q 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    networks: [sixro]
 
-  # 2. Kafka Broker
-  kafka:
-    image: confluentinc/cp-kafka:7.5.0
-    container_name: kafka
-    depends_on:
-      - zookeeper
-    ports:
-      - "9092:9092"
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      # 로컬(localhost:9092) 및 Docker 내부 네트워크 모두 접속 가능하도록 설정
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:29092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-
-  # 3. Redis (멱등성 검사 및 캐싱용)
   redis:
-    image: redis:alpine
-    container_name: redis
-    ports:
-      - "6379:6379"
+    image: redis:7.4
+    restart: unless-stopped
+    mem_limit: 256m
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    command:
+      - /bin/sh
+      - -c
+      - exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
+    ports: ["127.0.0.1:${REDIS_HOST_PORT:-6379}:6379"]
+    volumes: ["redis-data:/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [sixro]
+
+  kafka:
+    image: apache/kafka:3.9.2
+    restart: unless-stopped
+    user: "0:0"
+    mem_limit: 768m
+    environment:
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: INTERNAL://:29092,EXTERNAL://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:${KAFKA_HOST_PORT:-9092}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+    ports: ["127.0.0.1:${KAFKA_HOST_PORT:-9092}:9092"]
+    volumes: ["kafka-data:/var/lib/kafka/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:29092 --list >/dev/null"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+    networks: [sixro]
+
+  zipkin:
+    image: openzipkin/zipkin:3.6
+    restart: unless-stopped
+    mem_limit: 384m
+    environment:
+      JAVA_OPTS: -Xms64m -Xmx256m
+    ports: ["127.0.0.1:${ZIPKIN_HOST_PORT:-9411}:9411"]
+    networks: [sixro]
+
+  discovery-server:
+    <<: *app
+    build:
+      context: .
+      dockerfile: infrastructure/Dockerfile
+      args: { SERVICE: discovery-server }
+    environment:
+      <<: *app-environment
+      SERVER_PORT: "19090"
+      EUREKA_INSTANCE_IP_ADDRESS: discovery-server
+      EUREKA_INSTANCE_HOSTNAME: discovery-server
+    ports: ["127.0.0.1:19090:19090"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:19090/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+
+  gateway-service:
+    <<: *app
+    build:
+      context: .
+      dockerfile: infrastructure/Dockerfile
+      args: { SERVICE: gateway-service }
+    environment:
+      <<: *app-environment
+      SERVER_PORT: "19091"
+      EUREKA_INSTANCE_IP_ADDRESS: gateway-service
+      JWT_PUBLIC_KEY_PATH: /run/keys/public-key.pem
+    volumes:
+      - type: bind
+        source: ${LOCAL_KEY_DIRECTORY:-./local-keys}/public-key.pem
+        target: /run/keys/public-key.pem
+        read_only: true
+        bind: { create_host_path: false }
+    ports: ["127.0.0.1:19091:19091"]
+    depends_on:
+      discovery-server: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:19091/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+
+  auth-service:
+    <<: *app
+    build:
+      context: .
+      dockerfile: infrastructure/Dockerfile
+      args: { SERVICE: auth-service }
+    environment:
+      <<: *app-environment
+      SERVER_PORT: "19092"
+      EUREKA_INSTANCE_IP_ADDRESS: auth-service
+      JWT_PUBLIC_KEY_PATH: /run/keys/public-key.pem
+      JWT_PRIVATE_KEY_PATH: /run/keys/private-key.pem
+    volumes:
+      - type: bind
+        source: ${LOCAL_KEY_DIRECTORY:-./local-keys}/public-key.pem
+        target: /run/keys/public-key.pem
+        read_only: true
+        bind: { create_host_path: false }
+      - type: bind
+        source: ${LOCAL_KEY_DIRECTORY:-./local-keys}/private-key.pem
+        target: /run/keys/private-key.pem
+        read_only: true
+        bind: { create_host_path: false }
+    expose: ["19092"]
+    depends_on:
+      discovery-server: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:19092/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+
+  user-service:
+    <<: *app
+    build:
+      context: .
+      dockerfile: infrastructure/Dockerfile
+      args: { SERVICE: user-service }
+    environment:
+      <<: *app-environment
+      SERVER_PORT: "19093"
+      EUREKA_INSTANCE_IP_ADDRESS: user-service
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/sixro_db?currentSchema=user_schema,public
+      SPRING_DATASOURCE_USERNAME: user_user
+      SPRING_DATASOURCE_PASSWORD: ${APP_DB_PASSWORD}
+      SPRING_JPA_PROPERTIES_HIBERNATE_DEFAULT_SCHEMA: user_schema
+      USER_DB_URL: jdbc:postgresql://postgres:5432/sixro_db?currentSchema=user_schema,public
+      USER_DB_USERNAME: user_user
+      USER_DB_PASSWORD: ${APP_DB_PASSWORD}
+    expose: ["19093"]
+    depends_on:
+      discovery-server: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:19093/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+
+  company-service:
+    <<: *app
+    build:
+      context: .
+      dockerfile: infrastructure/Dockerfile
+      args: { SERVICE: company-service }
+    environment:
+      <<: *app-environment
+      SERVER_PORT: "19094"
+      EUREKA_INSTANCE_IP_ADDRESS: company-service
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/sixro_db?currentSchema=company_schema,public
+      SPRING_DATASOURCE_USERNAME: company_user
+      SPRING_DATASOURCE_PASSWORD: ${APP_DB_PASSWORD}
+      SPRING_JPA_PROPERTIES_HIBERNATE_DEFAULT_SCHEMA: company_schema
+      COMPANY_DB_URL: jdbc:postgresql://postgres:5432/sixro_db?currentSchema=company_schema,public
+      COMPANY_DB_USERNAME: company_user
+      COMPANY_DB_PASSWORD: ${APP_DB_PASSWORD}
+    expose: ["19094"]
+    depends_on:
+      discovery-server: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:19094/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+
+  product-service:
+    <<: *app
+    build:
+      context: .
+      dockerfile: infrastructure/Dockerfile
+      args: { SERVICE: product-service }
+    environment:
+      <<: *app-environment
+      SERVER_PORT: "19095"
+      EUREKA_INSTANCE_IP_ADDRESS: product-service
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/sixro_db?currentSchema=product_schema,public
+      SPRING_DATASOURCE_USERNAME: product_user
+      SPRING_DATASOURCE_PASSWORD: ${APP_DB_PASSWORD}
+      SPRING_JPA_PROPERTIES_HIBERNATE_DEFAULT_SCHEMA: product_schema
+      DB_URL: jdbc:postgresql://postgres:5432/sixro_db?currentSchema=product_schema,public
+      DB_USERNAME: product_user
+      DB_PASSWORD: ${APP_DB_PASSWORD}
+      PRODUCT_DB_URL: jdbc:postgresql://postgres:5432/sixro_db?currentSchema=product_schema,public
+      PRODUCT_DB_USERNAME: product_user
+      PRODUCT_DB_PASSWORD: ${APP_DB_PASSWORD}
+    expose: ["19095"]
+    depends_on:
+      discovery-server: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:19095/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+
+  order-service:
+    <<: *app
+    build:
+      context: .
+      dockerfile: infrastructure/Dockerfile
+      args: { SERVICE: order-service }
+    environment:
+      <<: *app-environment
+      SERVER_PORT: "19096"
+      EUREKA_INSTANCE_IP_ADDRESS: order-service
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/sixro_db?currentSchema=order_schema,public
+      SPRING_DATASOURCE_USERNAME: order_user
+      SPRING_DATASOURCE_PASSWORD: ${APP_DB_PASSWORD}
+      SPRING_JPA_PROPERTIES_HIBERNATE_DEFAULT_SCHEMA: order_schema
+      ORDER_DB_URL: jdbc:postgresql://postgres:5432/sixro_db?currentSchema=order_schema,public
+      ORDER_DB_USERNAME: order_user
+      ORDER_DB_PASSWORD: ${APP_DB_PASSWORD}
+    expose: ["19096"]
+    depends_on:
+      discovery-server: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:19096/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+
+  delivery-service:
+    <<: *app
+    build:
+      context: .
+      dockerfile: infrastructure/Dockerfile
+      args: { SERVICE: delivery-service }
+    environment:
+      <<: *app-environment
+      SERVER_PORT: "19097"
+      EUREKA_INSTANCE_IP_ADDRESS: delivery-service
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/sixro_db?currentSchema=delivery_schema,public
+      SPRING_DATASOURCE_USERNAME: delivery_user
+      SPRING_DATASOURCE_PASSWORD: ${APP_DB_PASSWORD}
+      SPRING_JPA_PROPERTIES_HIBERNATE_DEFAULT_SCHEMA: delivery_schema
+      DELIVERY_DB_URL: jdbc:postgresql://postgres:5432/sixro_db?currentSchema=delivery_schema,public
+      DELIVERY_DB_USERNAME: delivery_user
+      DELIVERY_DB_PASSWORD: ${APP_DB_PASSWORD}
+    expose: ["19097"]
+    depends_on:
+      discovery-server: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:19097/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+
+  hub-service:
+    <<: *app
+    build:
+      context: .
+      dockerfile: infrastructure/Dockerfile
+      args: { SERVICE: hub-service }
+    environment:
+      <<: *app-environment
+      SERVER_PORT: "19098"
+      EUREKA_INSTANCE_IP_ADDRESS: hub-service
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/sixro_db?currentSchema=hub_schema,public
+      SPRING_DATASOURCE_USERNAME: hub_user
+      SPRING_DATASOURCE_PASSWORD: ${APP_DB_PASSWORD}
+      SPRING_JPA_PROPERTIES_HIBERNATE_DEFAULT_SCHEMA: hub_schema
+      DB_URL: jdbc:postgresql://postgres:5432/sixro_db?currentSchema=hub_schema,public
+      DB_USERNAME: hub_user
+      DB_PASSWORD: ${APP_DB_PASSWORD}
+      HUB_DB_URL: jdbc:postgresql://postgres:5432/sixro_db?currentSchema=hub_schema,public
+      HUB_DB_USERNAME: hub_user
+      HUB_DB_PASSWORD: ${APP_DB_PASSWORD}
+      TMAP_APP_KEY: ${TMAP_APP_KEY:-local-disabled}
+    expose: ["19098"]
+    depends_on:
+      discovery-server: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:19098/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+
+  notification-service:
+    <<: *app
+    build:
+      context: .
+      dockerfile: infrastructure/Dockerfile
+      args: { SERVICE: notification-service }
+    environment:
+      <<: *app-environment
+      SERVER_PORT: "19099"
+      EUREKA_INSTANCE_IP_ADDRESS: notification-service
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/sixro_db?currentSchema=notification_schema,public
+      SPRING_DATASOURCE_USERNAME: notification_user
+      SPRING_DATASOURCE_PASSWORD: ${APP_DB_PASSWORD}
+      SPRING_JPA_PROPERTIES_HIBERNATE_DEFAULT_SCHEMA: notification_schema
+      NOTI_DB_URL: jdbc:postgresql://postgres:5432/sixro_db?currentSchema=notification_schema,public
+      NOTI_DB_USERNAME: notification_user
+      NOTI_DB_PASSWORD: ${APP_DB_PASSWORD}
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-local-disabled}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-local-disabled}
+    expose: ["19099"]
+    depends_on:
+      discovery-server: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:19099/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+
+  inventory-service:
+    <<: *app
+    build:
+      context: .
+      dockerfile: infrastructure/Dockerfile
+      args: { SERVICE: inventory-service }
+    environment:
+      <<: *app-environment
+      SERVER_PORT: "19100"
+      EUREKA_INSTANCE_IP_ADDRESS: inventory-service
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/sixro_db?currentSchema=inventory_schema,public
+      SPRING_DATASOURCE_USERNAME: inventory_user
+      SPRING_DATASOURCE_PASSWORD: ${APP_DB_PASSWORD}
+      SPRING_JPA_PROPERTIES_HIBERNATE_DEFAULT_SCHEMA: inventory_schema
+      INVENTORY_DB_URL: jdbc:postgresql://postgres:5432/sixro_db?currentSchema=inventory_schema,public
+      INVENTORY_DB_USERNAME: inventory_user
+      INVENTORY_DB_PASSWORD: ${APP_DB_PASSWORD}
+    expose: ["19100"]
+    depends_on:
+      discovery-server: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:19100/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+
+networks:
+  sixro:
+    driver: bridge
+volumes:
+  postgres-data:
+  redis-data:
+  kafka-data:

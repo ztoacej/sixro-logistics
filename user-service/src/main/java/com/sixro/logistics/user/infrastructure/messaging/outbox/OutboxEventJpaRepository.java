@@ -3,8 +3,10 @@ package com.sixro.logistics.user.infrastructure.messaging.outbox;
 import com.sixro.logistics.user.domain.outbox.OutboxEvent;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 /**
@@ -17,7 +19,7 @@ public interface OutboxEventJpaRepository
         extends JpaRepository<OutboxEvent, UUID> {
 
     /**
-     * 발행할 PENDING Outbox 이벤트를 생성 순서대로 조회하면서
+     * 재시도 시각이 된 PENDING/FAILED Outbox 이벤트를 예정 시각 순서로 조회하면서
      * 현재 Transaction이 처리할 행을 배타적으로 잠급니다.
      *
      * <p>{@code FOR UPDATE SKIP LOCKED}를 사용하므로 다른 인스턴스가
@@ -30,12 +32,13 @@ public interface OutboxEventJpaRepository
             value = """
                     SELECT *
                     FROM user_schema.p_user_outbox_events
-                    WHERE status = 'PENDING'
-                    ORDER BY created_at ASC
+                    WHERE status IN ('PENDING', 'FAILED')
+                      AND (next_attempt_at IS NULL OR next_attempt_at <= :now)
+                    ORDER BY COALESCE(next_attempt_at, created_at) ASC, event_id ASC
                     LIMIT 100
                     FOR UPDATE SKIP LOCKED
                     """,
             nativeQuery = true
     )
-    List<OutboxEvent> findPendingEventsForUpdate();
+    List<OutboxEvent> findPublishableEventsForUpdate(@Param("now") LocalDateTime now);
 }

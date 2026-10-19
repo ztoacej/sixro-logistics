@@ -16,7 +16,7 @@ public enum OutboxEventStatus {
     PUBLISHED,
 
     /**
-     * 재시도 정책을 모두 소진하여 최종적으로 발행에 실패한 상태입니다.
+     * 빠른 재시도에 실패한 상태입니다. 지정된 간격으로 복구 발행을 계속합니다.
      */
     FAILED
 }

@@ -111,25 +111,13 @@ public class CompanyController {
             ) UUID affiliationId
     ) {
 
-        if ("MASTER_ADMIN".equalsIgnoreCase(userRole)) {
-            // MASTER_ADMIN은 소속 정보 없이 모든 허브에 업체를 수정할 수 있습니다.
-        } else if ("HUB_ADMIN".equalsIgnoreCase(userRole)) {
-            // HUB_ADMIN은 자신의 담당 허브에만 업체를 수정할 수 있습니다.
-            if (affiliationId == null || !affiliationId.equals(request.getHubId())) {
-                throw new BaseException(CommonErrorCode.FORBIDDEN);
-            }
-        } else if("COMPANY_MANAGER".equalsIgnoreCase(userRole)) {
-            // COMPANY_MANAGER는 본인 업체에 대한 업체만 수정할 수 있습니다.
-            if (affiliationId == null || !affiliationId.equals(companyId)) {
-                throw new BaseException(CommonErrorCode.FORBIDDEN);
-            }
-        }
-
         CompanyResponseDto response =
                 companyService.updateCompany(
                         companyId,
                         request,
-                        userId
+                        userId,
+                        userRole,
+                        affiliationId
                 );
 
         return ResponseEntity.ok(response);

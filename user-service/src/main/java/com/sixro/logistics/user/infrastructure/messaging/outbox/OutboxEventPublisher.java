@@ -10,14 +10,18 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.time.Duration;
+import org.springframework.beans.factory.annotation.Value;
 
 /**
- * PENDING 상태의 Outbox 이벤트를 조회하여
+ * 재시도 시각이 된 PENDING/FAILED Outbox 이벤트를 조회하여
  * Kafka로 발행하는 Polling Publisher입니다.
  *
  * <p>Kafka 발행에 성공한 이벤트는 PUBLISHED 상태로 변경하고,
- * 발행에 실패한 이벤트는 PENDING 상태로 유지하여
- * 다음 Polling 주기에 다시 시도합니다.</p>
+ * 실패한 이벤트는 재시도 시각을 저장하고,
+ * 3회 실패 후에도 FAILED 상태에서 느리게 복구 발행을 계속합니다.</p>
  *
  *  * 현재 Consumer 구현 현황
  *  *
@@ -65,7 +69,11 @@ public class OutboxEventPublisher {
     private static final String USER_AFFILIATION_CHANGED_TOPIC =
             "user-affiliation-changed";
 
-    private static final int MAX_RETRY_COUNT = 3;
+    @Value("${outbox.publisher.retry-delay:5000}")
+    private long retryDelayMillis;
+
+    @Value("${outbox.publisher.failed-retry-delay:60000}")
+    private long failedRetryDelayMillis;
 
     private final OutboxEventRepository outboxEventRepository;
     private final KafkaUserEventPublisher kafkaUserEventPublisher;
@@ -90,7 +98,7 @@ public class OutboxEventPublisher {
          */
         List<OutboxEvent> pendingEvents =
                 outboxEventRepository
-                        .findPendingEventsForUpdate();
+                        .findPublishableEventsForUpdate(LocalDateTime.now(ZoneOffset.UTC));
 
         for (OutboxEvent outboxEvent : pendingEvents) {
             publish(outboxEvent);
@@ -153,45 +161,14 @@ public class OutboxEventPublisher {
             OutboxEvent outboxEvent,
             Exception exception
     ) {
-        outboxEvent.increaseRetryCount();
-
-        if (outboxEvent.getRetryCount()
-                >= MAX_RETRY_COUNT) {
-
-            outboxEvent.markFailed();
-
-            outboxEventRepository.save(
-                    outboxEvent
-            );
-
-            log.error(
-                    "Outbox 이벤트 최종 발행 실패. "
-                            + "eventId={}, eventType={}, retryCount={}",
-                    outboxEvent.getEventId(),
-                    outboxEvent.getEventType(),
-                    outboxEvent.getRetryCount(),
-                    exception
-            );
-
-            return;
-        }
-
-        /*
-         * 다음 Polling 주기에 다시 조회될 수 있도록
-         * PENDING 상태를 유지하고 재시도 횟수만 저장합니다.
-         */
-        outboxEventRepository.save(
-                outboxEvent
+        outboxEvent.recordPublishFailure(
+                LocalDateTime.now(ZoneOffset.UTC),
+                Duration.ofMillis(retryDelayMillis),
+                Duration.ofMillis(failedRetryDelayMillis)
         );
-
-        log.warn(
-                "Outbox 이벤트 Kafka 발행 실패. 재시도 예정. "
-                        + "eventId={}, eventType={}, retryCount={}",
-                outboxEvent.getEventId(),
-                outboxEvent.getEventType(),
-                outboxEvent.getRetryCount(),
-                exception
-        );
+        outboxEventRepository.save(outboxEvent);
+        log.error("Outbox 발행 실패. 다음 시각에 재시도합니다. eventId={}, status={}, nextAttemptAt={}",
+                outboxEvent.getEventId(), outboxEvent.getStatus(), outboxEvent.getNextAttemptAt(), exception);
     }
 
     /**

@@ -1,25 +1,25 @@
 package com.sixro.logistics.auth.application.service;
 
-import com.sixro.logistics.auth.domain.repository.RefreshTokenRepository;
-import com.sixro.logistics.auth.domain.repository.SessionRepository;
+import com.sixro.logistics.auth.domain.repository.AuthStateRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 public class UserAuthStateInvalidationService {
+    private final AuthStateRepository authStateRepository;
 
-    private final SessionRepository sessionRepository;
-    private final RefreshTokenRepository refreshTokenRepository;
-
+    /** event-id가 없는 과거 메시지는 중복 판별 없이 원자적으로 삭제합니다. */
     public void invalidate(UUID userId) {
-        /*
-         * Session을 먼저 삭제하면 Gateway가 기존 Access Token을
-         * 즉시 차단합니다.
-         */
-        sessionRepository.deleteByUserId(userId);
-        refreshTokenRepository.deleteByUserId(userId);
+        invalidate(userId, UUID.randomUUID());
+    }
+
+    public boolean invalidate(UUID userId, UUID eventId) {
+        return authStateRepository.invalidateUserState(
+                Objects.requireNonNull(userId, "userId"),
+                Objects.requireNonNull(eventId, "eventId"));
     }
 }

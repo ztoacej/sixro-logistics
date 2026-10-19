@@ -33,6 +33,9 @@ public class RedisAuthStateRepository
     private static final DefaultRedisScript<Long> REISSUE_SCRIPT =
             createScript("redis/reissue.lua");
 
+    private static final DefaultRedisScript<Long> INVALIDATE_SCRIPT =
+            createScript("redis/invalidate-user-state.lua");
+
     private final StringRedisTemplate redisTemplate;
 
     /**
@@ -60,12 +63,14 @@ public class RedisAuthStateRepository
     }
 
     /**
-     * 로그아웃 시 Refresh Token과 Session을 삭제하고,
-     * 유효한 Access Token이 있다면 blacklist에 등록합니다.
+     * Lua 내부에서 현재 Refresh Token과 Session을 비교한 뒤 삭제합니다.
+     * 검증 이후 새 로그인이나 재발급이 발생했다면 변경하지 않습니다.
      */
     @Override
-    public void clearLoginState(
+    public boolean clearLoginState(
             UUID userId,
+            String expectedRefreshTokenHash,
+            UUID expectedSessionId,
             String accessTokenJwtId,
             Duration accessTokenTtl
     ) {
@@ -98,11 +103,16 @@ public class RedisAuthStateRepository
                         sessionKey(userId),
                         blacklistKey
                 ),
+                expectedRefreshTokenHash,
+                expectedSessionId.toString(),
                 jwtId,
                 String.valueOf(ttlMillis)
         );
 
-        validateScriptResult(result);
+        if (result == null) {
+            throw new IllegalStateException("Redis logout script returned no result.");
+        }
+        return Long.valueOf(1L).equals(result);
     }
 
     /**
@@ -163,6 +173,17 @@ public class RedisAuthStateRepository
                 String.valueOf(ttl.toMillis())
         );
 
+        return Long.valueOf(1L).equals(result);
+    }
+
+    @Override
+    public boolean invalidateUserState(UUID userId, UUID eventId) {
+        Long result = redisTemplate.execute(INVALIDATE_SCRIPT,
+                List.of(sessionKey(userId), refreshKey(userId), "security-event:" + eventId),
+                userId.toString());
+        if (result == null) {
+            throw new IllegalStateException("Redis invalidation script returned no result.");
+        }
         return Long.valueOf(1L).equals(result);
     }
 

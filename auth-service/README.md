@@ -42,6 +42,19 @@ Sixro Logistics의 사용자 인증과 JWT 발급, Redis 기반 인증 상태 �
 
 MASTER_ADMIN 사용자 생성 API는 비밀번호를 암호화한 뒤 User Service에 승인 상태 사용자 생성을 요청합니다.
 
+## 관리자 사용자 생성 인증
+
+`POST /api/v1/users`는 Gateway가 전달한 Bearer Access Token을 Auth Service에서도 검증합니다.
+기존 `JwtProvider`로 서명·issuer·만료·토큰 유형을 검증한 뒤 Redis 블랙리스트와 현재 세션을 확인합니다.
+`MASTER_ADMIN`만 생성할 수 있고, 생성 명령의 요청자 ID와 역할은 검증된 JWT에서 가져옵니다.
+클라이언트가 보낸 `X-User-Id`, `X-User-Role`은 관리자 인증에 사용하지 않습니다.
+Redis 조회에 실패하면 생성을 진행하지 않습니다. 공개 가입·로그인 API의 인증 정책은 유지합니다.
+
+보안 필터와 컨트롤러의 연결은 `AdminUserSecurityTest`에서 검증합니다.
+JWT 검증기와 Redis 저장소·생성 서비스는 mock으로 대체하며 정상 생성, 헤더 위조, 권한 부족,
+만료·잘못된 토큰, 블랙리스트, 세션 불일치·누락, Redis 장애를 확인합니다.
+실제 JWT 파싱은 기존 `JwtProviderTest`가 별도로 검증합니다.
+
 ## 🔑 JWT
 
 Access Token과 Refresh Token은 RSA 개인키로 서명합니다.
@@ -148,7 +161,9 @@ refresh:{userId} 삭제
 
 Session이 삭제되면 Gateway가 기존 Access Token을 즉시 차단합니다.
 
-동일 Event가 중복 전달되더라도 Redis Key 삭제 결과가 같으므로 현재 처리 로직은 기본적인 멱등성을 가집니다.
+`event-id` 처리 기록과 인증 상태 삭제를 Redis Lua에서 원자적으로 처리합니다.
+이미 처리한 이벤트의 재전달은 새 로그인 세션을 삭제하지 않습니다. 처리 기록은 만료 없이 보존하므로 Redis 영속성과 메모리 관리가 필요합니다.
+`event-id`가 없는 과거 메시지는 호환 처리하되 중복 판별은 할 수 없습니다.
 
 ## 🔍 분산 추적
 

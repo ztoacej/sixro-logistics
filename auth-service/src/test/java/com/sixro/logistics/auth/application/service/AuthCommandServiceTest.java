@@ -421,6 +421,10 @@ class AuthCommandServiceTest {
         when(jwtProvider.parseAccessToken("access-token"))
                 .thenReturn(accessClaims);
 
+        when(authStateRepository.clearLoginState(
+                eq(USER_ID), eq("refresh-hash"), eq(SESSION_ID),
+                eq("access-jti"), any(Duration.class))).thenReturn(true);
+
         authCommandService.logout(
                 new LogoutCommand("access-token", "refresh-token")
         );
@@ -429,12 +433,53 @@ class AuthCommandServiceTest {
                 ArgumentCaptor.forClass(Duration.class);
         verify(authStateRepository).clearLoginState(
                 eq(USER_ID),
+                eq("refresh-hash"),
+                eq(SESSION_ID),
                 eq("access-jti"),
                 ttlCaptor.capture()
         );
         assertThat(ttlCaptor.getValue()).isPositive();
         assertThat(ttlCaptor.getValue())
                 .isLessThanOrEqualTo(Duration.ofMinutes(10));
+    }
+
+    @Test
+    @DisplayName("로그아웃 직전 세션이 교체되면 성공으로 응답하지 않는다")
+    void logout_replacedState_isRejected() {
+        prepareLogout();
+        when(authStateRepository.clearLoginState(
+                eq(USER_ID), eq("refresh-hash"), eq(SESSION_ID),
+                eq("access-jti"), any(Duration.class))).thenReturn(false);
+
+        AuthException exception = assertThrows(AuthException.class,
+                () -> authCommandService.logout(new LogoutCommand("access-token", "refresh-token")));
+        assertThat(exception.getErrorCode()).isEqualTo(AuthErrorCode.INVALID_REFRESH_TOKEN);
+    }
+
+    @Test
+    @DisplayName("만료된 Access Token은 blacklist 없이 현재 세션을 조건부 삭제한다")
+    void logout_expiredAccessToken_clearsMatchingState() {
+        prepareLogout();
+        when(jwtProvider.parseAccessToken("access-token"))
+                .thenThrow(new AuthException(AuthErrorCode.EXPIRED_ACCESS_TOKEN));
+        when(authStateRepository.clearLoginState(
+                USER_ID, "refresh-hash", SESSION_ID, null, null)).thenReturn(true);
+
+        authCommandService.logout(new LogoutCommand("access-token", "refresh-token"));
+        verify(authStateRepository).clearLoginState(
+                USER_ID, "refresh-hash", SESSION_ID, null, null);
+    }
+
+    private void prepareLogout() {
+        when(jwtProvider.parseRefreshToken("refresh-token")).thenReturn(new JwtClaims(
+                USER_ID, UserRole.HUB_ADMIN, SESSION_ID, "refresh-jti",
+                Instant.now().plus(REFRESH_EXPIRATION)));
+        when(refreshTokenRepository.findTokenHashByUserId(USER_ID))
+                .thenReturn(Optional.of("refresh-hash"));
+        when(tokenHashProvider.hash("refresh-token")).thenReturn("refresh-hash");
+        when(sessionRepository.findSessionIdByUserId(USER_ID)).thenReturn(Optional.of(SESSION_ID));
+        when(jwtProvider.parseAccessToken("access-token")).thenReturn(new JwtClaims(
+                USER_ID, UserRole.HUB_ADMIN, SESSION_ID, "access-jti", Instant.now().plusSeconds(600)));
     }
 
     private static Stream<Arguments> blockedLoginStatuses() {

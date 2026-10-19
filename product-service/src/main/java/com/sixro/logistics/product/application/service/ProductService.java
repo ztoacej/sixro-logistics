@@ -2,6 +2,8 @@ package com.sixro.logistics.product.application.service;
 
 
 import com.sixro.logistics.product.domain.entity.Product;
+import com.sixro.logistics.common.core.exception.BaseException;
+import com.sixro.logistics.common.core.exception.CommonErrorCode;
 import com.sixro.logistics.product.domain.repository.ProductRepository;
 import com.sixro.logistics.product.presentation.dto.request.ProductCreateRequestDto;
 import com.sixro.logistics.product.presentation.dto.request.ProductUpdateRequestDto;
@@ -71,6 +73,7 @@ public class ProductService {
     ) {
         Product product = Product.builder()
                 .companyId(request.getCompanyId())
+                .hubId(request.getHubId())
                 .productName(request.getProductName())
                 .description(request.getDescription())
                 .price(request.getPrice())
@@ -88,14 +91,24 @@ public class ProductService {
     public ProductResponseDto updateProduct(
             UUID productId,
             ProductUpdateRequestDto request,
-            UUID userId
+            UUID userId,
+            String userRole,
+            UUID affiliationId
     ) {
 
         Product product = productRepository
-                .findByProductIdAndIsDeletedFalse(productId)
+                .findActiveForUpdate(productId)
                 .orElseThrow(() ->
                         new IllegalArgumentException("존재하지 않는 상품입니다.")
                 );
+
+        boolean authorized = "MASTER_ADMIN".equalsIgnoreCase(userRole)
+                || affiliationId != null && (
+                        "HUB_ADMIN".equalsIgnoreCase(userRole) && affiliationId.equals(product.getHubId())
+                        || "COMPANY_MANAGER".equalsIgnoreCase(userRole) && affiliationId.equals(product.getCompanyId()));
+        if (!authorized) {
+            throw new BaseException(CommonErrorCode.FORBIDDEN);
+        }
 
         product.updateProduct(
                 request.getProductName(),

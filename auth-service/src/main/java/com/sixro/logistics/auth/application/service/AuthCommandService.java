@@ -337,11 +337,17 @@ public class AuthCommandService {
             }
         }
 
-        authStateRepository.clearLoginState(
+        // 앞선 조회 후 새 로그인/재발급이 끼어들 수 있으므로 Lua에서 다시 비교합니다.
+        boolean cleared = authStateRepository.clearLoginState(
                 refreshClaims.userId(),
+                tokenHashProvider.hash(command.refreshToken()),
+                refreshClaims.sessionId(),
                 accessTokenJwtId,
                 accessTokenTtl
         );
+        if (!cleared) {
+            throw new AuthException(AuthErrorCode.INVALID_REFRESH_TOKEN);
+        }
     }
 
     /**
