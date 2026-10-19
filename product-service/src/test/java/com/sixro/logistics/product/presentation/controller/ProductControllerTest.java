@@ -55,7 +55,7 @@ class ProductControllerTest {
     @Test
     void masterCanUpdateWithoutAffiliationHeader() throws Exception {
         mvc.perform(write("update", "MASTER_ADMIN")).andExpect(status().isOk());
-        verify(service).updateProduct(eq(PRODUCT), any(), eq(USER));
+        verify(service).updateProduct(eq(PRODUCT), any(), eq(USER), eq("MASTER_ADMIN"), isNull());
     }
 
     @Test
@@ -65,18 +65,17 @@ class ProductControllerTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"create,HUB_ADMIN", "update,HUB_ADMIN", "delete,HUB_ADMIN",
-                "create,COMPANY_MANAGER", "update,COMPANY_MANAGER"})
+    @CsvSource({"create,HUB_ADMIN", "delete,HUB_ADMIN", "create,COMPANY_MANAGER"})
     void affiliatedRoleWithoutAffiliationIsForbidden(String method, String role) throws Exception {
         mvc.perform(write(method, role)).andExpect(status().isForbidden());
         verify(service, never()).createProduct(any(), any());
-        verify(service, never()).updateProduct(any(), any(), any());
+        verify(service, never()).updateProduct(any(), any(), any(), any(), any());
         verify(service, never()).deleteProduct(any(), any());
     }
 
     @ParameterizedTest
-    @CsvSource({"create,DELIVERY_MANAGER", "update,DELIVERY_MANAGER", "delete,DELIVERY_MANAGER",
-                "create,UNKNOWN", "update,UNKNOWN", "delete,UNKNOWN", "delete,COMPANY_MANAGER"})
+    @CsvSource({"create,DELIVERY_MANAGER", "delete,DELIVERY_MANAGER",
+                "create,UNKNOWN", "delete,UNKNOWN", "delete,COMPANY_MANAGER"})
     void unsupportedRoleCannotFallThroughWhenAffiliationIsOptional(String method, String role) throws Exception {
         mvc.perform(write(method, role)).andExpect(status().isForbidden());
         verifyNoInteractions(service);
@@ -110,5 +109,14 @@ class ProductControllerTest {
                         .content("{\"companyId\":\"%s\",\"productName\":\"test\",\"price\":1000}".formatted(COMPANY)))
                 .andExpect(status().isBadRequest());
         verifyNoInteractions(service);
+    }
+    @Test
+    void updatePassesCallerScopeToServiceAndMapsForbiddenResponse() throws Exception {
+        doThrow(new com.sixro.logistics.common.core.exception.BaseException(
+                com.sixro.logistics.common.core.exception.CommonErrorCode.FORBIDDEN))
+                .when(service).updateProduct(eq(PRODUCT), any(), eq(USER), eq("HUB_ADMIN"), eq(HUB));
+        mvc.perform(write("update", "HUB_ADMIN").header("X-Affiliation-Id", HUB))
+                .andExpect(status().isForbidden());
+        verify(service).updateProduct(eq(PRODUCT), any(), eq(USER), eq("HUB_ADMIN"), eq(HUB));
     }
 }

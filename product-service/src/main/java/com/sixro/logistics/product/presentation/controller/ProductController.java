@@ -117,27 +117,13 @@ public class ProductController {
             @RequestHeader(value = "X-Affiliation-Id", required = false) UUID affiliationId
     ) {
 
-        if ("MASTER_ADMIN".equalsIgnoreCase(userRole)) {
-            // MASTER_ADMIN은 소속 정보 없이 모든 상품을 등록할 수 있습니다.
-        } else if ("HUB_ADMIN".equalsIgnoreCase(userRole)) {
-            // HUB_ADMIN은 자신의 담당 허브에만 상품을 등록할 수 있습니다.
-            if (affiliationId == null || !affiliationId.equals(request.getHubId())) {
-                throw new BaseException(CommonErrorCode.FORBIDDEN);
-            }
-        } else if("COMPANY_MANAGER".equalsIgnoreCase(userRole)) {
-            // COMPANY_MANAGER는 본인 업체에 대한 상품을 등록할 수 있습니다.
-            if (affiliationId == null || !affiliationId.equals(request.getCompanyId())) {
-                throw new BaseException(CommonErrorCode.FORBIDDEN);
-            }
-        } else {
-            throw new BaseException(CommonErrorCode.FORBIDDEN);
-        }
-
         ProductResponseDto response =
                 productService.updateProduct(
                         productId,
                         request,
-                        userId
+                        userId,
+                        userRole,
+                        affiliationId
                 );
 
         return ResponseEntity.ok(CommonResponse.success("상품이 성공적으로 수정되었습니다."));

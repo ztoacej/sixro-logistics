@@ -52,8 +52,8 @@
 
 ### 2. 상품 수정 (`PATCH /api/v1/products/{productId}`)
 - **`MASTER_ADMIN`**: 모든 상품을 수정할 수 있습니다.
-- **`HUB_ADMIN`**: 본인이 담당하는 허브와 수정 대상 요청의 허브 ID가 일치할 때만 수정할 수 있습니다.
-- **`COMPANY_MANAGER`**: 본인의 소속 업체 ID와 수정 대상 요청의 업체 ID가 일치할 때만 수정할 수 있습니다.
+- **`HUB_ADMIN`**: 본인이 담당하는 허브와 DB에서 조회한 기존 상품의 허브 ID가 일치할 때만 수정할 수 있습니다.
+- **`COMPANY_MANAGER`**: 본인의 소속 업체 ID와 DB에서 조회한 기존 상품의 업체 ID가 일치할 때만 수정할 수 있습니다.
 - 그 외 역할은 접근이 거부(`403 Forbidden`)됩니다.
 
 ### 3. 상품 삭제 (`DELETE /api/v1/products/{productId}`)

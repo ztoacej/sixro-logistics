@@ -51,8 +51,9 @@
 
 ### 2. 업체 수정 (`PATCH /api/v1/companies/{companyId}`)
 - **`MASTER_ADMIN`**: 모든 업체를 수정할 수 있습니다.
-- **`HUB_ADMIN`**: 본인이 담당하는 허브와 수정 대상 업체의 허브가 일치할 때만 수정할 수 있습니다.
+- **`HUB_ADMIN`**: DB에서 조회한 기존 업체의 허브가 담당 허브와 같을 때만 수정할 수 있습니다.
 - **`COMPANY_MANAGER`**: 본인의 소속 업체 ID(`affiliationId` == `companyId`)인 경우에만 수정할 수 있습니다.
+- 업체의 소속 허브 변경은 `MASTER_ADMIN`만 허용합니다.
 
 ### 3. 업체 삭제 (`DELETE /api/v1/companies/{companyId}`)
 - **`MASTER_ADMIN`**: 제약 없이 업체를 삭제할 수 있습니다.

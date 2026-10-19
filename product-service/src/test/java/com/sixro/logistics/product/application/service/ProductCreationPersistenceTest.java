@@ -55,4 +55,26 @@ class ProductCreationPersistenceTest {
         assertThat(stored.getCompanyId()).isEqualTo(companyId);
         assertThat(result.getHubId()).isEqualTo(hubId);
     }
+    @Test
+    void authorizedUpdateExecutesLockingQueryAndPersistsChanges() throws Exception {
+        UUID hubId = UUID.randomUUID();
+        UUID companyId = UUID.randomUUID();
+        UUID actor = UUID.randomUUID();
+        var mapper = new ObjectMapper();
+        var create = mapper.readValue("""
+                {"companyId":"%s","hubId":"%s","productName":"original","price":1000}
+                """.formatted(companyId, hubId), ProductCreateRequestDto.class);
+        var created = service.createProduct(create, actor);
+        repository.flush();
+        entityManager.clear();
+        var update = mapper.readValue("""
+                {"companyId":"%s","hubId":"%s","productName":"updated"}
+                """.formatted(companyId, hubId),
+                com.sixro.logistics.product.presentation.dto.request.ProductUpdateRequestDto.class);
+        service.updateProduct(created.getProductId(), update, actor, "HUB_ADMIN", hubId);
+        repository.flush();
+        entityManager.clear();
+        assertThat(repository.findById(created.getProductId()).orElseThrow().getProductName())
+                .isEqualTo("updated");
+    }
 }

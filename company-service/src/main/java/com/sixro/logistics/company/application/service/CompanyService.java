@@ -1,6 +1,8 @@
 package com.sixro.logistics.company.application.service;
 
 import com.sixro.logistics.company.domain.entity.Company;
+import com.sixro.logistics.common.core.exception.BaseException;
+import com.sixro.logistics.common.core.exception.CommonErrorCode;
 import com.sixro.logistics.company.domain.repository.CompanyRepository;
 import com.sixro.logistics.company.presentation.dto.request.CompanyCreateRequestDto;
 import com.sixro.logistics.company.presentation.dto.request.CompanyUpdateRequestDto;
@@ -112,14 +114,30 @@ public class CompanyService {
     public CompanyResponseDto updateCompany(
             UUID companyId,
             CompanyUpdateRequestDto request,
-            UUID userId
+            UUID userId,
+            String userRole,
+            UUID affiliationId
     ) {
 
         Company company = companyRepository
-                .findByCompanyIdAndIsDeletedFalse(companyId)
+                .findActiveForUpdate(companyId)
                 .orElseThrow(() ->
                         new IllegalArgumentException("존재하지 않는 업체입니다.")
                 );
+
+        boolean master = "MASTER_ADMIN".equalsIgnoreCase(userRole);
+        boolean hubAdmin = "HUB_ADMIN".equalsIgnoreCase(userRole);
+        boolean companyManager = "COMPANY_MANAGER".equalsIgnoreCase(userRole);
+        boolean authorized = master || affiliationId != null && (
+                hubAdmin && affiliationId.equals(company.getHubId())
+                || companyManager && affiliationId.equals(company.getCompanyId()));
+        if (!authorized) {
+            throw new BaseException(CommonErrorCode.FORBIDDEN);
+        }
+        // 업체의 허브 이동은 MASTER_ADMIN만 허용합니다.
+        if (!master && request.getHubId() != null && !request.getHubId().equals(company.getHubId())) {
+            throw new BaseException(CommonErrorCode.FORBIDDEN);
+        }
 
         company.update(
                 request.getHubId(),
