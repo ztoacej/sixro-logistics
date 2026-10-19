@@ -46,4 +46,6 @@ public interface AuthStateRepository {
             String newRefreshTokenHash,
             Duration ttl
     );
+    /** 이벤트 ID 기록과 Session/Refresh Token 삭제를 원자적으로 수행합니다. */
+    boolean invalidateUserState(UUID userId, UUID eventId);
 }

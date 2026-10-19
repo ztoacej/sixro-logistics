@@ -158,6 +158,7 @@ CREATE TABLE IF NOT EXISTS user_schema.p_user_outbox_events
     created_at TIMESTAMP(6) NOT NULL,
     published_at TIMESTAMP(6),
     retry_count INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at TIMESTAMP(6),
 
     CONSTRAINT pk_p_user_outbox_events PRIMARY KEY (event_id),
 

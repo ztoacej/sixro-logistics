@@ -33,6 +33,9 @@ public class RedisAuthStateRepository
     private static final DefaultRedisScript<Long> REISSUE_SCRIPT =
             createScript("redis/reissue.lua");
 
+    private static final DefaultRedisScript<Long> INVALIDATE_SCRIPT =
+            createScript("redis/invalidate-user-state.lua");
+
     private final StringRedisTemplate redisTemplate;
 
     /**
@@ -170,6 +173,17 @@ public class RedisAuthStateRepository
                 String.valueOf(ttl.toMillis())
         );
 
+        return Long.valueOf(1L).equals(result);
+    }
+
+    @Override
+    public boolean invalidateUserState(UUID userId, UUID eventId) {
+        Long result = redisTemplate.execute(INVALIDATE_SCRIPT,
+                List.of(sessionKey(userId), refreshKey(userId), "security-event:" + eventId),
+                userId.toString());
+        if (result == null) {
+            throw new IllegalStateException("Redis invalidation script returned no result.");
+        }
         return Long.valueOf(1L).equals(result);
     }
 

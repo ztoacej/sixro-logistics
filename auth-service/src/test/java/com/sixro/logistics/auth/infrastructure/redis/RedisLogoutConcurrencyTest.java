@@ -141,6 +141,21 @@ class RedisLogoutConcurrencyTest {
         assertThat(redis.hasKey("session:" + userId)).isFalse();
     }
 
+    @Test
+    void repeatedSecurityEventDoesNotDeleteNewLogin() {
+        UUID eventId = UUID.randomUUID();
+        assertThat(repository.invalidateUserState(userId, eventId)).isTrue();
+        assertThat(redis.hasKey("refresh:" + userId)).isFalse();
+        assertThat(redis.hasKey("session:" + userId)).isFalse();
+        UUID newSession = UUID.randomUUID();
+        repository.saveLoginState(userId, "new-hash", newSession, TTL);
+        assertThat(repository.invalidateUserState(userId, eventId)).isFalse();
+        assertState("new-hash", newSession);
+        assertThat(redis.getExpire("security-event:" + eventId)).isEqualTo(-1L);
+        assertThat(repository.invalidateUserState(userId, UUID.randomUUID())).isTrue();
+        assertThat(redis.hasKey("session:" + userId)).isFalse();
+    }
+
     private boolean concurrentLogout(CyclicBarrier start) {
         try {
             start.await(5, TimeUnit.SECONDS);

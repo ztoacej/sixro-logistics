@@ -6,6 +6,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.time.Duration;
 import java.util.UUID;
 
 /**
@@ -70,6 +71,10 @@ public class OutboxEvent {
     @Column(name = "retry_count", nullable = false)
     private int retryCount;
 
+    // UTC 기준 다음 발행 시각. null인 기존 PENDING/FAILED 행도 즉시 재처리합니다.
+    @Column(name = "next_attempt_at")
+    private LocalDateTime nextAttemptAt;
+
     private OutboxEvent(
             UUID aggregateId,
             String aggregateType,
@@ -108,17 +113,19 @@ public class OutboxEvent {
     public void markPublished() {
         this.status = OutboxEventStatus.PUBLISHED;
         this.publishedAt = LocalDateTime.now();
+        this.nextAttemptAt = null;
     }
 
-    /**
-     * Kafka 실패 처리에 대해 재시도 회수를 정의합니다.
-     */
-    public void increaseRetryCount() {
-        this.retryCount++;
+    /** 빠른 재시도 3회 이후에는 FAILED 상태로 느리게 재시도합니다. */
+    public void recordPublishFailure(LocalDateTime now, Duration retryDelay, Duration failedDelay) {
+        if (retryDelay.isZero() || retryDelay.isNegative()
+                || failedDelay.isZero() || failedDelay.isNegative()) {
+            throw new IllegalArgumentException("재시도 간격은 양수여야 합니다.");
+        }
+        // 기존 DB의 retry_count BETWEEN 0 AND 3 제약을 유지합니다.
+        this.retryCount = Math.min(this.retryCount + 1, 3);
+        this.status = retryCount >= 3 ? OutboxEventStatus.FAILED : OutboxEventStatus.PENDING;
+        this.publishedAt = null;
+        this.nextAttemptAt = now.plus(status == OutboxEventStatus.FAILED ? failedDelay : retryDelay);
     }
-
-    public void markFailed() {
-        this.status = OutboxEventStatus.FAILED;
-    }
-
 }

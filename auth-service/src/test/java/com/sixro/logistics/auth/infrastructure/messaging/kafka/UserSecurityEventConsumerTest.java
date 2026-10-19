@@ -123,4 +123,21 @@ class UserSecurityEventConsumerTest {
         assertThatThrownBy(() -> consumer.consume(payload))
                 .isSameAs(redisException);
     }
+    @Test
+    void eventIdIsUsedForDeduplication() {
+        UUID userId = UUID.randomUUID();
+        UUID eventId = UUID.randomUUID();
+        consumer.consume("{\"userId\":\"%s\"}".formatted(userId), eventId.toString());
+        verify(invalidationService).invalidate(userId, eventId);
+        verify(invalidationService, never()).invalidate(userId);
+    }
+
+    @Test
+    void invalidEventIdIsNotSilentlyTreatedAsLegacy() {
+        UUID userId = UUID.randomUUID();
+        assertThatThrownBy(() -> consumer.consume(
+                "{\"userId\":\"%s\"}".formatted(userId), "invalid-id"))
+                .isInstanceOf(IllegalArgumentException.class);
+        org.mockito.Mockito.verifyNoInteractions(invalidationService);
+    }
 }

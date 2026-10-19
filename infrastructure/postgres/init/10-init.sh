@@ -19,6 +19,7 @@ done
 # because its legacy enum DDL differs from the current @Enumerated mapping.
 for sql in \
   /service-ddl/user/01_create_user_tables.sql \
+  /service-ddl/user/02_add_outbox_retry_schedule.sql \
   /service-ddl/company/01_create_company_tables.sql \
   /service-ddl/product/01_create_product_tables.sql \
   /service-ddl/order/01.create_order_tables.sql \

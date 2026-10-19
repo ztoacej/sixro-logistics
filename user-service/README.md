@@ -139,11 +139,13 @@ Outbox 상태는 다음과 같습니다.
 
 ```text
 PENDING → PUBLISHED
-        → FAILED
+        → FAILED → PUBLISHED (복구 발행 성공 시)
 ```
 
 - Polling 주기: 1초
-- 최대 발행 시도: 3회
+- 실패 후 5초 간격으로 재시도하고, 3회 실패하면 `FAILED`에서 60초 간격으로 계속 재시도
+- 다음 시도 시각은 DB에 저장하며 기존 `FAILED` 이벤트도 복구 대상에 포함
+- 기존 DB에는 재배포 전 `02_add_outbox_retry_schedule.sql` 적용 필요
 - 한 번에 최대 100개 조회
 - `FOR UPDATE SKIP LOCKED`로 다중 인스턴스 중복 선점 방지
 - 발행 성공을 확인한 뒤 `PUBLISHED`로 변경

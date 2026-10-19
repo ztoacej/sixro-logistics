@@ -127,6 +127,9 @@ logging:
 outbox:
   publisher:
     fixed-delay: 1000
+    # 발행 실패 간격(ms). 3회 이후에도 FAILED 상태에서 복구 발행합니다.
+    retry-delay: 5000
+    failed-retry-delay: 60000
 
 # Hub / Company 소속 검증 API 재시도 정책
 #
