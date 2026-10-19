@@ -20,11 +20,16 @@ public interface AuthStateRepository {
     );
 
     /**
-     * 로그아웃 시 Refresh Token과 Session을 삭제하고,
-     * 유효한 Access Token이 있으면 blacklist에 함께 등록합니다.
+     * 현재 Refresh Token hash와 Session이 요청의 예상값과 모두 일치할 때만
+     * 인증 상태를 삭제하고 유효한 Access Token을 blacklist에 등록합니다.
+     * 비교와 변경은 하나의 원자적 연산이어야 합니다.
+     *
+     * @return 삭제에 성공하면 true, 세션/토큰이 교체되거나 없으면 false
      */
-    void clearLoginState(
+    boolean clearLoginState(
             UUID userId,
+            String expectedRefreshTokenHash,
+            UUID expectedSessionId,
             String accessTokenJwtId,
             Duration accessTokenTtl
     );
