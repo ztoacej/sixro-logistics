@@ -71,6 +71,7 @@ public class ProductService {
     ) {
         Product product = Product.builder()
                 .companyId(request.getCompanyId())
+                .hubId(request.getHubId())
                 .productName(request.getProductName())
                 .description(request.getDescription())
                 .price(request.getPrice())

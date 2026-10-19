@@ -75,7 +75,7 @@ public class ProductController {
             @Valid @RequestBody ProductCreateRequestDto request,
             @RequestHeader("X-User-Id") UUID userId,
             @RequestHeader("X-User-Role") String userRole,
-            @RequestHeader("X-Affiliation-Id") UUID affiliationId
+            @RequestHeader(value = "X-Affiliation-Id", required = false) UUID affiliationId
     ) {
 
         if ("MASTER_ADMIN".equalsIgnoreCase(userRole)) {
@@ -90,6 +90,8 @@ public class ProductController {
             if (affiliationId == null || !affiliationId.equals(request.getCompanyId())) {
                 throw new BaseException(CommonErrorCode.FORBIDDEN);
             }
+        } else {
+            throw new BaseException(CommonErrorCode.FORBIDDEN);
         }
 
         ProductResponseDto response = productService.createProduct(request, userId);
@@ -112,7 +114,7 @@ public class ProductController {
             @Valid @RequestBody ProductUpdateRequestDto request,
             @RequestHeader("X-User-Id") UUID userId,
             @RequestHeader("X-User-Role") String userRole,
-            @RequestHeader("X-Affiliation-Id") UUID affiliationId
+            @RequestHeader(value = "X-Affiliation-Id", required = false) UUID affiliationId
     ) {
 
         if ("MASTER_ADMIN".equalsIgnoreCase(userRole)) {
@@ -127,6 +129,8 @@ public class ProductController {
             if (affiliationId == null || !affiliationId.equals(request.getCompanyId())) {
                 throw new BaseException(CommonErrorCode.FORBIDDEN);
             }
+        } else {
+            throw new BaseException(CommonErrorCode.FORBIDDEN);
         }
 
         ProductResponseDto response =
@@ -151,7 +155,7 @@ public class ProductController {
             @PathVariable UUID productId,
             @RequestHeader("X-User-Id") UUID userId,
             @RequestHeader("X-User-Role") String userRole,
-            @RequestHeader("X-Affiliation-Id") UUID affiliationId
+            @RequestHeader(value = "X-Affiliation-Id", required = false) UUID affiliationId
     ) {
 
         if ("MASTER_ADMIN".equalsIgnoreCase(userRole)) {
@@ -163,6 +167,8 @@ public class ProductController {
             if (affiliationId == null || !affiliationId.equals(resCompanyDto.getHubId())) {
                 throw new BaseException(CommonErrorCode.FORBIDDEN);
             }
+        } else {
+            throw new BaseException(CommonErrorCode.FORBIDDEN);
         }
 
         productService.deleteProduct(
