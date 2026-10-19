@@ -476,12 +476,12 @@ public class UserCommandService {
      *
      * <p>MASTER_ADMIN 또는 HUB_ADMIN만 승인할 수 있습니다.</p>
      *
-     * <p>허브 관리자의 상세 관리 범위는 별도 정책이 정의되지
-     * 않았으므로 현재는 역할만 확인합니다.</p>
+     * <p>HUB_ADMIN은 자신의 허브 또는 그 허브에 속한 업체의 신청자만 처리합니다.</p>
      */
     public UserResult approveUser(
             ApproveUserCommand command,
-            UserRole requesterRole
+            UserRole requesterRole,
+            UUID requesterAffiliationId
     ) {
         validateApprovalAuthority(requesterRole);
 
@@ -506,12 +506,16 @@ public class UserCommandService {
                 user.getAffiliationType()
         );
 
+        validateApprovalScope(user, requesterRole, requesterAffiliationId);
+
         /*
          * 승인 직전에 소속이 여전히 존재하며 삭제되지 않았는지
          * 최종 검증합니다.
          */
-        if (user.getRole()
-                != UserRole.MASTER_ADMIN) {
+        // HUB_ADMIN의 업체 소속 검증은 범위 확인에서 이미 수행했으므로 중복 호출하지 않습니다.
+        if (user.getRole() != UserRole.MASTER_ADMIN
+                && (requesterRole == UserRole.MASTER_ADMIN
+                    || user.getAffiliationType() == AffiliationType.HUB)) {
             affiliationValidationService.validate(
                     user.getAffiliationId(),
                     user.getAffiliationType()
@@ -538,12 +542,13 @@ public class UserCommandService {
     /**
      * 사용자 가입 요청을 거절합니다.
      *
-     * <p>거절은 소속의 존재 여부와 관계없이 처리할 수 있으므로
-     * 외부 소속 서비스를 호출하지 않습니다.</p>
+     * <p>MASTER_ADMIN은 외부 소속 조회 없이 거절할 수 있습니다.
+     * HUB_ADMIN은 업체 소속 신청자의 허브를 조회하여 처리 범위를 확인합니다.</p>
      */
     public UserResult rejectUser(
             RejectUserCommand command,
-            UserRole requesterRole
+            UserRole requesterRole,
+            UUID requesterAffiliationId
     ) {
         validateApprovalAuthority(requesterRole);
 
@@ -551,6 +556,8 @@ public class UserCommandService {
                 userReader.getAccessibleUserForUpdate(
                         command.targetUserId()
                 );
+
+        validateApprovalScope(user, requesterRole, requesterAffiliationId);
 
         user.reject(
                 command.reviewerId(),
@@ -781,11 +788,28 @@ public class UserCommandService {
         }
     }
 
+    /** 요청 본문 대신 저장된 대상 소속과 Gateway가 전달한 요청자 소속을 비교합니다. */
+    private void validateApprovalScope(User user, UserRole requesterRole, UUID requesterAffiliationId) {
+        if (requesterRole == UserRole.MASTER_ADMIN) {
+            return;
+        }
+        if (requesterAffiliationId == null || user.getAffiliationId() == null
+                || user.getAffiliationType() == null || user.getRole() == UserRole.MASTER_ADMIN) {
+            throw new BaseException(UserErrorCode.USER_ACCESS_DENIED);
+        }
+        UUID targetHubId = switch (user.getAffiliationType()) {
+            case HUB -> user.getAffiliationId();
+            case COMPANY -> affiliationValidationService.getCompanyHubId(user.getAffiliationId());
+        };
+        if (!requesterAffiliationId.equals(targetHubId)) {
+            throw new BaseException(UserErrorCode.USER_ACCESS_DENIED);
+        }
+    }
+
     /**
      * 가입 요청 승인 및 거절 권한을 확인합니다.
      *
-     * <p>현재 확정된 요구사항에 따라 MASTER_ADMIN과 HUB_ADMIN의
-     * 역할만 확인하며, 허브별 관리 범위는 제한하지 않습니다.</p>
+     * <p>역할 확인 후 대상 사용자에 대한 허브별 처리 범위도 별도로 검증합니다.</p>
      */
     private void validateApprovalAuthority(
             UserRole requesterRole

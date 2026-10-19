@@ -146,9 +146,9 @@ class UserApprovalConcurrencyIntegrationTest {
 
     private void decide(UUID target, boolean approval) {
         if (approval) {
-            service.approveUser(new ApproveUserCommand(target, REVIEWER), UserRole.MASTER_ADMIN);
+            service.approveUser(new ApproveUserCommand(target, REVIEWER), UserRole.MASTER_ADMIN, null);
         } else {
-            service.rejectUser(new RejectUserCommand(target, REVIEWER, "가입 정보 불일치"), UserRole.MASTER_ADMIN);
+            service.rejectUser(new RejectUserCommand(target, REVIEWER, "가입 정보 불일치"), UserRole.MASTER_ADMIN, null);
         }
     }
 

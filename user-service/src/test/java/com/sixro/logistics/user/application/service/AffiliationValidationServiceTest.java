@@ -84,6 +84,7 @@ class AffiliationValidationServiceTest {
         UUID companyId = UUID.randomUUID();
         InternalCompanyResponse data = new InternalCompanyResponse(
                 companyId,
+                UUID.randomUUID(),
                 "식스로물류"
         );
 
@@ -308,6 +309,7 @@ class AffiliationValidationServiceTest {
 
         InternalCompanyResponse data =
                 new InternalCompanyResponse(
+                        UUID.randomUUID(),
                         UUID.randomUUID(),
                         "다른 업체"
                 );

@@ -310,7 +310,8 @@ class UserCommandServiceTest {
 
         UserResult result = userCommandService.approveUser(
                 command,
-                UserRole.HUB_ADMIN
+                UserRole.MASTER_ADMIN,
+                null
         );
 
         assertThat(result.userStatus()).isEqualTo(UserStatus.APPROVED);
@@ -342,7 +343,8 @@ class UserCommandServiceTest {
 
         UserResult result = userCommandService.rejectUser(
                 command,
-                UserRole.MASTER_ADMIN
+                UserRole.MASTER_ADMIN,
+                null
         );
 
         assertThat(result.userStatus()).isEqualTo(UserStatus.REJECTED);
@@ -378,7 +380,8 @@ class UserCommandServiceTest {
                 BaseException.class,
                 () -> userCommandService.rejectUser(
                         command,
-                        UserRole.COMPANY_MANAGER
+                        UserRole.COMPANY_MANAGER,
+                        COMPANY_ID
                 )
         );
 
