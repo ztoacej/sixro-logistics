@@ -2,6 +2,10 @@ package com.sixro.logistics.user.infrastructure.persistence.repository;
 
 import com.sixro.logistics.user.domain.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import jakarta.persistence.LockModeType;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -10,6 +14,10 @@ import java.util.UUID;
  * Spring Data JPA 기반의 사용자 Repository입니다.
  */
 public interface JpaUserRepository extends JpaRepository<User, UUID> {
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select u from User u where u.userId = :userId")
+    Optional<User> findByIdForUpdate(@Param("userId") UUID userId);
 
     // 로그인 등 활성 사용자 조회에 사용합니다.
     Optional<User>

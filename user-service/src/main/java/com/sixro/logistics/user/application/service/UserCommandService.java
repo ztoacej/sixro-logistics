@@ -486,7 +486,7 @@ public class UserCommandService {
         validateApprovalAuthority(requesterRole);
 
         User user =
-                userReader.getAccessibleUser(
+                userReader.getAccessibleUserForUpdate(
                         command.targetUserId()
                 );
 
@@ -548,7 +548,7 @@ public class UserCommandService {
         validateApprovalAuthority(requesterRole);
 
         User user =
-                userReader.getAccessibleUser(
+                userReader.getAccessibleUserForUpdate(
                         command.targetUserId()
                 );
 
