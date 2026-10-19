@@ -54,3 +54,16 @@ Micrometer Tracing과 Zipkin을 통해 서비스 간 요청 흐름을 추적할 
 | 손유진 | `delivery-service`                                                   | |
 
 
+
+
+## 로컬 전체 실행
+
+Docker Desktop과 Java 21이 필요합니다. 프로젝트 루트에서 실행하세요.
+최초 실행 시 `.env.local`이 예시 설정으로 생성되며, `local-keys`에 RSA 키 쌍이 필요합니다.
+
+```bash
+bash infrastructure/local.sh up
+```
+
+Gateway: `http://localhost:19091` · Eureka: `http://localhost:19090`
+실제 로컬 설정 파일인 `.env.local`은 Git에 포함하지 않습니다.
