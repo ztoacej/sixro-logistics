@@ -33,8 +33,17 @@ public class UserReader {
      * 존재하며 비활성화되지 않은 사용자를 조회합니다.
      */
     public User getAccessibleUser(UUID userId) {
-        User user = getById(userId);
+        return validateAccessible(getById(userId));
+    }
 
+    /** 승인·거절 상태 검증 전에 대상 행을 잠급니다. 호출자는 트랜잭션 안에서 실행해야 합니다. */
+    public User getAccessibleUserForUpdate(UUID userId) {
+        User user = userRepository.findByIdForUpdate(userId)
+                .orElseThrow(() -> new BaseException(UserErrorCode.USER_NOT_FOUND));
+        return validateAccessible(user);
+    }
+
+    private User validateAccessible(User user) {
         if (user.isDeleted()
                 || user.getDeletedAt() != null
                 || user.getDeletedBy() != null) {

@@ -106,8 +106,9 @@ public final class TestJwtFactory {
     ) throws Exception {
         RSAPrivateKey privateKey = loadPrivateKey();
 
-        JWTClaimsSet claims = new JWTClaimsSet.Builder()
+        JWTClaimsSet.Builder claimsBuilder = new JWTClaimsSet.Builder()
                 .subject(userId.toString())
+                .claim("username", "test-user")
                 .issuer(ISSUER)
                 .jwtID(tokenId)
                 .claim(
@@ -120,8 +121,13 @@ public final class TestJwtFactory {
                         sessionId.toString()
                 )
                 .issueTime(Date.from(issuedAt))
-                .expirationTime(Date.from(expiresAt))
-                .build();
+                .expirationTime(Date.from(expiresAt));
+
+        if (!"MASTER_ADMIN".equals(role)) {
+            claimsBuilder.claim("affiliationId", UUID.randomUUID().toString())
+                    .claim("affiliationType", "COMPANY_MANAGER".equals(role) ? "COMPANY" : "HUB");
+        }
+        JWTClaimsSet claims = claimsBuilder.build();
 
         SignedJWT signedJwt = new SignedJWT(
                 new JWSHeader.Builder(JWSAlgorithm.RS256)

@@ -17,6 +17,9 @@ public interface UserRepository {
     // 삭제 여부와 관계없이 사용자를 조회합니다.
     Optional<User> findById(UUID userId);
 
+    // 승인·거절 대상 행을 현재 트랜잭션이 끝날 때까지 잠급니다.
+    Optional<User> findByIdForUpdate(UUID userId);
+
     // username으로 Soft Delete되지 않은 사용자를 조회합니다.
     Optional<User> findActiveByUsername(String username);
 

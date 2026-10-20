@@ -4,6 +4,15 @@ import com.sixro.logistics.common.constant.HeaderConstants;
 import com.sixro.logistics.common.test.config.RedisTestContainerConfig;
 import com.sixro.logistics.gateway.support.TestJwtFactory;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.web.reactive.function.server.RouterFunction;
+import org.springframework.web.reactive.function.server.RouterFunctions;
+import org.springframework.web.reactive.function.server.RequestPredicates;
+import org.springframework.web.reactive.function.server.ServerResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.context.ImportTestcontainers;
@@ -21,12 +30,62 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.time.Duration;
 import java.util.UUID;
 
+@Import(GatewaySecurityIntegrationTest.SlackEndpointConfig.class)
 @ImportTestcontainers(RedisTestContainerConfig.class)
 @ActiveProfiles("test")
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT
 )
 class GatewaySecurityIntegrationTest {
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class SlackEndpointConfig {
+        @Bean
+        RouterFunction<ServerResponse> slackUpdateEndpoint() {
+            // A local test endpoint proves successful authorization without starting Notification.
+            return RouterFunctions.route(RequestPredicates.PATCH("/api/v1/slack/messages/{id}"),
+                    request -> ServerResponse.ok().bodyValue("slack-update-reached"));
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"HUB_ADMIN", "COMPANY_MANAGER", "DELIVERY_MANAGER"})
+    void nonMasterCannotPatchSlackMessage(String role) throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        String token = TestJwtFactory.createValidToken(UUID.randomUUID().toString(), userId, sessionId, role);
+        saveSession(userId, sessionId);
+        try {
+            webTestClient.patch().uri("/api/v1/slack/messages/" + UUID.randomUUID())
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                    .exchange().expectStatus().isForbidden()
+                    .expectBody().jsonPath("$.code").isEqualTo("GW004");
+        } finally {
+            redisTemplate.delete(SESSION_PREFIX + userId).block();
+        }
+    }
+
+    @Test
+    void masterCanPatchSlackMessage() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        String token = TestJwtFactory.createValidToken(UUID.randomUUID().toString(), userId, sessionId, "MASTER_ADMIN");
+        saveSession(userId, sessionId);
+        try {
+            webTestClient.patch().uri("/api/v1/slack/messages/" + UUID.randomUUID())
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                    .exchange().expectStatus().isOk()
+                    .expectBody(String.class).isEqualTo("slack-update-reached");
+        } finally {
+            redisTemplate.delete(SESSION_PREFIX + userId).block();
+        }
+    }
+
+    @Test
+    void unauthenticatedRequestCannotPatchSlackMessage() {
+        webTestClient.patch().uri("/api/v1/slack/messages/" + UUID.randomUUID())
+                .exchange().expectStatus().isUnauthorized();
+    }
 
     private static final String BLACKLIST_PREFIX = "blacklist:";
     private static final String SESSION_PREFIX = "session:";

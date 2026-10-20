@@ -628,7 +628,7 @@ public class SecurityConfig {
 
                         // Slack 메시지 수정
                         .pathMatchers(
-                                HttpMethod.POST,
+                                HttpMethod.PATCH,
                                 "/api/v1/slack/messages/*"
                         )
                         .hasRole(MASTER_ADMIN)

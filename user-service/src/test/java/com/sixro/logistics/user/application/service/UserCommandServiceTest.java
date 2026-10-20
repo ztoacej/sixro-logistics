@@ -306,11 +306,12 @@ class UserCommandServiceTest {
         );
         ApproveUserCommand command = new ApproveUserCommand(USER_ID, REVIEWER_ID);
 
-        when(userReader.getAccessibleUser(USER_ID)).thenReturn(user);
+        when(userReader.getAccessibleUserForUpdate(USER_ID)).thenReturn(user);
 
         UserResult result = userCommandService.approveUser(
                 command,
-                UserRole.HUB_ADMIN
+                UserRole.MASTER_ADMIN,
+                null
         );
 
         assertThat(result.userStatus()).isEqualTo(UserStatus.APPROVED);
@@ -338,11 +339,12 @@ class UserCommandServiceTest {
                 "  가입 정보가 일치하지 않습니다.  "
         );
 
-        when(userReader.getAccessibleUser(USER_ID)).thenReturn(user);
+        when(userReader.getAccessibleUserForUpdate(USER_ID)).thenReturn(user);
 
         UserResult result = userCommandService.rejectUser(
                 command,
-                UserRole.MASTER_ADMIN
+                UserRole.MASTER_ADMIN,
+                null
         );
 
         assertThat(result.userStatus()).isEqualTo(UserStatus.REJECTED);
@@ -378,7 +380,8 @@ class UserCommandServiceTest {
                 BaseException.class,
                 () -> userCommandService.rejectUser(
                         command,
-                        UserRole.COMPANY_MANAGER
+                        UserRole.COMPANY_MANAGER,
+                        COMPANY_ID
                 )
         );
 

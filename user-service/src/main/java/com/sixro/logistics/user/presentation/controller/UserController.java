@@ -206,7 +206,7 @@ public class UserController {
 
     @Operation(
             summary = "사용자 가입 승인",
-            description = "MASTER_ADMIN 또는 HUB_ADMIN이 PENDING 상태 사용자의 가입을 승인하고 역할과 소속 정보를 확정합니다."
+            description = "MASTER_ADMIN은 전체, HUB_ADMIN은 자신의 허브 및 해당 허브 업체의 PENDING 신청자만 승인할 수 있습니다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "가입 승인 성공"),
@@ -228,11 +228,15 @@ public class UserController {
             @RequestHeader(HeaderConstants.USER_ID) UUID reviewerId,
 
             @Parameter(hidden = true)
-            @RequestHeader(HeaderConstants.USER_ROLE) UserRole requesterRole
+            @RequestHeader(HeaderConstants.USER_ROLE) UserRole requesterRole,
+
+            @Parameter(hidden = true)
+            @RequestHeader(value = HeaderConstants.AFFILIATION_ID, required = false) UUID requesterAffiliationId
     ) {
         UserResult result = userCommandService.approveUser(
                 new ApproveUserCommand(userId, reviewerId),
-                requesterRole
+                requesterRole,
+                requesterAffiliationId
         );
 
         return CommonResponse.success("가입을 승인했습니다.", ApproveUserResponse.from(result));
@@ -240,16 +244,17 @@ public class UserController {
 
     @Operation(
             summary = "사용자 가입 거절",
-            description = "MASTER_ADMIN 또는 HUB_ADMIN이 PENDING 상태 사용자의 가입을 거절하고 거절 사유를 기록합니다."
+            description = "MASTER_ADMIN은 전체, HUB_ADMIN은 자신의 허브 및 해당 허브 업체의 PENDING 신청자만 거절할 수 있습니다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "가입 거절 성공"),
-            @ApiResponse(responseCode = "400", description = "C002 - 거절 사유 검증 실패"),
+            @ApiResponse(responseCode = "400", description = "C002 - 거절 사유 검증 실패 / U012 - 소속을 찾을 수 없음"),
             @ApiResponse(responseCode = "401", description = "A008/A009/A010 - Access Token 인증 실패"),
             @ApiResponse(responseCode = "403", description = "U003 - 가입 거절 권한 없음"),
             @ApiResponse(responseCode = "404", description = "U001 - 사용자를 찾을 수 없음"),
             @ApiResponse(responseCode = "409", description = "U007 - 가입 거절 불가능한 상태"),
             @ApiResponse(responseCode = "410", description = "U002 - 비활성화된 사용자"),
+            @ApiResponse(responseCode = "503", description = "U013 - 소속 서비스 호출 실패"),
             @ApiResponse(responseCode = "500", description = "C999 - 서버 내부 오류")
     })
     @PostMapping("/{userId}/reject")
@@ -263,11 +268,15 @@ public class UserController {
             @Parameter(hidden = true)
             @RequestHeader(HeaderConstants.USER_ROLE) UserRole requesterRole,
 
+            @Parameter(hidden = true)
+            @RequestHeader(value = HeaderConstants.AFFILIATION_ID, required = false) UUID requesterAffiliationId,
+
             @Valid @RequestBody RejectUserRequest request
     ) {
         UserResult result = userCommandService.rejectUser(
                 new RejectUserCommand(userId, reviewerId, request.rejectedReason()),
-                requesterRole
+                requesterRole,
+                requesterAffiliationId
         );
 
         return CommonResponse.success("가입을 거절했습니다.", RejectUserResponse.from(result));

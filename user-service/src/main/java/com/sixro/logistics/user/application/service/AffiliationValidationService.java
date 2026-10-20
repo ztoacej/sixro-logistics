@@ -79,7 +79,7 @@ public class AffiliationValidationService {
     /**
      * Company Service를 호출하여 업체 존재 여부를 검증합니다.
      */
-    private void validateCompany(UUID companyId) {
+    private InternalCompanyResponse validateCompany(UUID companyId) {
         try {
             CommonResponse<InternalCompanyResponse> response =
                     affiliationClientReader.getCompany(companyId);
@@ -88,6 +88,7 @@ public class AffiliationValidationService {
                     companyId,
                     response
             );
+            return response.data();
 
         } catch (CallNotPermittedException exception) {
             /*
@@ -107,6 +108,19 @@ public class AffiliationValidationService {
                     exception
             );
         }
+        throw new BaseException(UserErrorCode.AFFILIATION_SERVICE_UNAVAILABLE);
+    }
+
+    /** 업체 조회 결과의 허브를 사용해 허브 관리자의 처리 범위를 확인합니다. */
+    public UUID getCompanyHubId(UUID companyId) {
+        if (companyId == null) {
+            throw new BaseException(UserErrorCode.INVALID_AFFILIATION);
+        }
+        UUID hubId = validateCompany(companyId).hubId();
+        if (hubId == null) {
+            throw new BaseException(UserErrorCode.AFFILIATION_SERVICE_UNAVAILABLE);
+        }
+        return hubId;
     }
 
     /**

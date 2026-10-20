@@ -38,6 +38,11 @@ public class UserRepositoryAdapter implements UserRepository {
         return jpaUserRepository.findById(userId);
     }
 
+    @Override
+    public Optional<User> findByIdForUpdate(UUID userId) {
+        return jpaUserRepository.findByIdForUpdate(userId);
+    }
+
     /**
      * username으로 활성 사용자를 조회합니다.
      *
